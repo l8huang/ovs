@@ -205,6 +205,35 @@ struct mcgroup_index mcgroups;
  * tunnel_key of datapaths with at least one local port binding. */
 struct hmap local_datapaths = HMAP_INITIALIZER(&local_datapaths);
 
+/* Retrieves the OVN Southbound remote's json session probe interval from the
+ * "external-ids:ovn-remote-probe-interval" key in 'ovs_idl' and returns it.
+ *
+ * This function must be called after get_ovnsb_remote().
+ *
+ */
+static bool
+get_ovnsb_remote_probe_interval(struct ovsdb_idl *ovs_idl, int *value)
+{
+    const struct ovsrec_open_vswitch *cfg = ovsrec_open_vswitch_first(ovs_idl);
+    if (!cfg) {
+        return false;
+    }
+
+    const char * probe_interval =
+            smap_get(&cfg->external_ids, "ovn-remote-probe-interval");
+    if (probe_interval) {
+        if (str_to_int(probe_interval, 10, value)) {
+            VLOG_INFO("OVN remote probe interval is set to %d ms", *value);
+            return true;
+        }
+
+        VLOG_WARN("Invalid value for OVN remote probe interval: %s",
+                    probe_interval);
+    }
+
+    return false;
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -274,6 +303,13 @@ main(int argc, char *argv[])
     ovsdb_idl_track_add_all(ovnsb_idl_loop.idl);
 
     ovsdb_idl_get_initial_snapshot(ovnsb_idl_loop.idl);
+
+    int probe_interval = 0;
+    if (get_ovnsb_remote_probe_interval(ovs_idl_loop.idl, &probe_interval)) {
+        /* If 'probe_interval' is nonzero, then it will be forced to a value
+         * of at least 1000 ms.*/
+        ovsdb_idl_set_probe_interval(ovnsb_idl_loop.idl, probe_interval);
+    }
 
     /* Initialize connection tracking zones. */
     struct simap ct_zones = SIMAP_INITIALIZER(&ct_zones);
