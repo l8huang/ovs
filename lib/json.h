@@ -30,13 +30,12 @@
  *        "should" be unique).
  */
 
+#include "openvswitch/dynamic-string.h"
 #include "shash.h"
 
 #ifdef  __cplusplus
 extern "C" {
 #endif
-
-struct ds;
 
 /* Type of a JSON value. */
 enum json_type {
@@ -127,6 +126,13 @@ enum {
 };
 char *json_to_string(const struct json *, int flags);
 void json_to_ds(const struct json *, int flags, struct ds *);
+/* Initialize 'ds', with reserved size suitable for typical Json objects */
+static inline void
+json_ds_init(struct ds *ds)
+{
+    ds_init(ds);
+    ds_reserve(ds, 32 * 1024); /* pre allocate 32Kbytes buffer */
+}
 
 /* JSON string formatting operations. */
 

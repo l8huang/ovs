@@ -198,7 +198,8 @@ jsonrpc_log_msg(const struct jsonrpc *rpc, const char *title,
                 const struct jsonrpc_msg *msg)
 {
     if (VLOG_IS_DBG_ENABLED()) {
-        struct ds s = DS_EMPTY_INITIALIZER;
+        struct ds s;
+        json_ds_init(&s);
         if (msg->method) {
             ds_put_format(&s, ", method=\"%s\"", msg->method);
         }
@@ -238,7 +239,7 @@ jsonrpc_send(struct jsonrpc *rpc, struct jsonrpc_msg *msg)
 {
     struct ofpbuf *buf;
     struct json *json;
-    struct ds ds = DS_EMPTY_INITIALIZER;
+    struct ds ds;
     size_t length;
 
     if (rpc->status) {
@@ -246,6 +247,7 @@ jsonrpc_send(struct jsonrpc *rpc, struct jsonrpc_msg *msg)
         return rpc->status;
     }
 
+    json_ds_init(&ds);
     jsonrpc_log_msg(rpc, "send", msg);
 
     json = jsonrpc_msg_to_json(msg);
