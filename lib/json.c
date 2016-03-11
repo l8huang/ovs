@@ -1462,7 +1462,7 @@ json_to_string(const struct json *json, int flags)
 {
     struct ds ds;
 
-    ds_init(&ds);
+    json_ds_init(&ds);
     json_to_ds(json, flags, &ds);
     return ds_steal_cstr(&ds);
 }
