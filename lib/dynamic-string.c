@@ -16,12 +16,15 @@
 
 #include <config.h>
 #include "openvswitch/dynamic-string.h"
+#include "coverage.h"
 #include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include "timeval.h"
 #include "util.h"
+
+COVERAGE_DEFINE(ds_bytes_relocated);
 
 /* Initializes 'ds' as an empty string buffer. */
 void
@@ -58,9 +61,15 @@ void
 ds_reserve(struct ds *ds, size_t min_length)
 {
     if (min_length > ds->allocated || !ds->string) {
+        char *string_ = ds->string;
+        size_t size_ = ds->allocated;
+
         ds->allocated += MAX(min_length, ds->allocated);
         ds->allocated = MAX(8, ds->allocated);
         ds->string = xrealloc(ds->string, ds->allocated + 1);
+        if (string_ && (string_ != ds->string)) {
+            COVERAGE_ADD(ds_bytes_relocated, size_);
+        }
     }
 }
 
