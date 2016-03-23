@@ -77,6 +77,13 @@ enum lex_format {
 };
 const char *lex_format_to_string(enum lex_format);
 
+
+
+enum lex_token_source {
+    LEX_TOKEN_FIXED, /* use the buffer defined in lex_token */
+    LEX_TOKEN_MALLOC, /* expand into head */
+};
+
 /* A token.
  *
  * 's' is owned by the token. */
@@ -86,11 +93,16 @@ struct lex_token {
     enum lex_format format;     /* LEX_T_INTEGER, LEX_T_MASKED_INTEGER only. */
     union mf_subvalue value;    /* LEX_T_INTEGER, LEX_T_MASKED_INTEGER only. */
     union mf_subvalue mask;     /* LEX_T_MASKED_INTEGER only. */
+    enum lex_token_source source;
+    char buffer[128];           /* pointed by s while buffer_source is LEX_TOKEN_FIXED */
 };
 
 void lex_token_init(struct lex_token *);
 void lex_token_destroy(struct lex_token *);
 void lex_token_swap(struct lex_token *, struct lex_token *);
+void lex_token_strcpy(struct lex_token *, const char *s, size_t length);
+void lex_token_strset(struct lex_token *, char *s);
+void lex_token_vsprintf(struct lex_token *, const char *format, va_list args);
 
 void lex_token_format(const struct lex_token *, struct ds *);
 const char *lex_token_parse(struct lex_token *, const char *input,
