@@ -105,7 +105,7 @@ static void ofctrl_recv(const struct ofp_header *, enum ofptype);
 void
 ofctrl_init(void)
 {
-    swconn = rconn_create(5, 0, DSCP_DEFAULT, 1 << OFP13_VERSION);
+    swconn = rconn_create(0, 0, DSCP_DEFAULT, 1 << OFP13_VERSION);
     tx_counter = rconn_packet_counter_create();
     hmap_init(&installed_flows);
 }
