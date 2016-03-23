@@ -56,7 +56,11 @@ lex_token_init(struct lex_token *token)
 void
 lex_token_destroy(struct lex_token *token)
 {
-    free(token->s);
+    if (token->s && token->s != token->buffer) {
+        free(token->s);
+    }
+
+    token->s = NULL;
 }
 
 /* Exchanges 'a' and 'b'. */
@@ -66,6 +70,70 @@ lex_token_swap(struct lex_token *a, struct lex_token *b)
     struct lex_token tmp = *a;
     *a = *b;
     *b = tmp;
+
+    /* before swap, if 's' was pointed to 'buffer', its value shall be
+     * changed to point to the 'buffer' with the copied value.
+     */
+    if (a->s == b->buffer) {
+        a->s = a->buffer;
+    }
+
+    if (b->s == a->buffer) {
+        b->s = b->buffer;
+    }
+}
+
+/* the string 's' may not terminate by '\0' at 'length'. */
+void
+lex_token_strcpy(struct lex_token *token, const char *s, size_t length)
+{
+    if (token->s == NULL || token->s == token->buffer) {
+        if (length + 1 <= sizeof(token->buffer)) {
+            memcpy(token->buffer, s, length);
+            token->buffer[length] = '\0';
+            token->s = token->buffer;
+            return;
+        }
+
+        token->s = xmemdup0(s, length);
+    } else {
+        token->s = xrealloc(token->s, length + 1);
+        memcpy(token->s, s, length);
+        token->s[length] = '\0';
+    }
+}
+
+void
+lex_token_strset(struct lex_token *token, char *s)
+{
+    if (token->s && token->s != token->buffer) {
+        free(token->s);
+    }
+
+    token->s = s;
+}
+
+void
+lex_token_vsprintf(struct lex_token *token, const char *format, va_list args)
+{
+    va_list args2;
+    size_t length;
+
+    va_copy(args2, args);
+    length = vsnprintf(NULL, 0, format, args);
+
+    if (token->s == NULL || token->s == token->buffer) {
+        if (length + 1 <= sizeof(token->buffer)) {
+            token->s = token->buffer;
+        } else {
+            token->s = xmalloc(length + 1);
+        }
+    } else {
+        token->s = xrealloc(token->s, length + 1);
+    }
+
+    vsnprintf(token->s, length + 1, format, args2);
+    va_end(args2);
 }
 
 /* lex_token_format(). */
@@ -261,7 +329,7 @@ lex_error(struct lex_token *token, const char *message, ...)
 
     va_list args;
     va_start(args, message);
-    token->s = xvasprintf(message, args);
+    lex_token_vsprintf(token, message, args);
     va_end(args);
 }
 
@@ -428,6 +496,7 @@ static const char *
 lex_parse_string(const char *p, struct lex_token *token)
 {
     const char *start = ++p;
+    char * s = NULL;
     for (;;) {
         switch (*p) {
         case '\0':
@@ -435,8 +504,9 @@ lex_parse_string(const char *p, struct lex_token *token)
             return p;
 
         case '"':
-            token->type = (json_string_unescape(start, p - start, &token->s)
+            token->type = (json_string_unescape(start, p - start, &s)
                            ? LEX_T_STRING : LEX_T_ERROR);
+            lex_token_strset(token, s);
             return p + 1;
 
         case '\\':
@@ -476,7 +546,7 @@ lex_parse_id(const char *p, struct lex_token *token)
     } while (lex_is_idn(*p));
 
     token->type = LEX_T_ID;
-    token->s = xmemdup0(start, p - start);
+    lex_token_strcpy(token, start, p - start);
     return p;
 }
 
