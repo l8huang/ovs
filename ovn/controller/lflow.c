@@ -211,7 +211,7 @@ add_logical_flows(struct controller_ctx *ctx, const struct lport_index *lports,
         if (!ldp) {
             continue;
         }
-        if (!ingress && is_switch(ldp)) {
+        if (is_switch(ldp)) {
             /* For a logical switch datapath, local_datapaths tells us if there
              * are any local ports for this datapath.  If not, processing
              * logical flows for the egress pipeline of this datapath is
