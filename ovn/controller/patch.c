@@ -15,6 +15,7 @@
 
 #include <config.h>
 
+#include "lflow.h"
 #include "patch.h"
 
 #include "hash.h"
@@ -92,7 +93,7 @@ create_patch_port(struct controller_ctx *ctx,
     ports[src->n_ports] = port;
     ovsrec_bridge_verify_ports(src);
     ovsrec_bridge_set_ports(src, ports, src->n_ports + 1);
-
+    reset_flow_processing();
     free(ports);
 }
 
@@ -125,6 +126,7 @@ remove_port(struct controller_ctx *ctx,
             return;
         }
     }
+    reset_flow_processing();
 }
 
 /* Obtains external-ids:ovn-bridge-mappings from OVSDB and adds patch ports for
@@ -190,7 +192,8 @@ add_bridge_mappings(struct controller_ctx *ctx,
              * to create patch ports for it. */
             continue;
         }
-        if (ld->localnet_port) {
+        if (ld->localnet_port && strcmp(ld->localnet_port->logical_port,
+                                        binding->logical_port)) {
             static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 1);
             VLOG_WARN_RL(&rl, "localnet port '%s' already set for datapath "
                          "'%"PRId64"', skipping the new port '%s'.",

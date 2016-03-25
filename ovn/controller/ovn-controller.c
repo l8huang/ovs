@@ -198,6 +198,13 @@ get_ovnsb_remote(struct ovsdb_idl *ovs_idl)
     }
 }
 
+struct lport_index lports;
+struct mcgroup_index mcgroups;
+
+/* Contains "struct local_datpath" nodes whose hash values are the
+ * tunnel_key of datapaths with at least one local port binding. */
+struct hmap local_datapaths = HMAP_INITIALIZER(&local_datapaths);
+
 int
 main(int argc, char *argv[])
 {
@@ -227,6 +234,9 @@ main(int argc, char *argv[])
     ofctrl_init();
     pinctrl_init();
     lflow_init();
+
+    lport_index_init(&lports);
+    mcgroup_index_init(&mcgroups);
 
     /* Connect to OVS OVSDB instance.  We do not monitor all tables by
      * default, so modules must register their interest explicitly.  */
@@ -259,6 +269,10 @@ main(int argc, char *argv[])
     char *ovnsb_remote = get_ovnsb_remote(ovs_idl_loop.idl);
     struct ovsdb_idl_loop ovnsb_idl_loop = OVSDB_IDL_LOOP_INITIALIZER(
         ovsdb_idl_create(ovnsb_remote, &sbrec_idl_class, true, true));
+
+    /* track the southbound idl */
+    ovsdb_idl_track_add_all(ovnsb_idl_loop.idl);
+
     ovsdb_idl_get_initial_snapshot(ovnsb_idl_loop.idl);
 
     /* Initialize connection tracking zones. */
@@ -278,10 +292,6 @@ main(int argc, char *argv[])
             .ovnsb_idl_txn = ovsdb_idl_loop_run(&ovnsb_idl_loop),
         };
 
-        /* Contains "struct local_datpath" nodes whose hash values are the
-         * tunnel_key of datapaths with at least one local port binding. */
-        struct hmap local_datapaths = HMAP_INITIALIZER(&local_datapaths);
-
         const struct ovsrec_bridge *br_int = get_br_int(&ctx);
         const char *chassis_id = get_chassis_id(ctx.ovs_idl);
 
@@ -295,35 +305,21 @@ main(int argc, char *argv[])
         if (br_int) {
             patch_run(&ctx, br_int, &local_datapaths);
 
-            struct lport_index lports;
-            struct mcgroup_index mcgroups;
-            lport_index_init(&lports, ctx.ovnsb_idl);
-            mcgroup_index_init(&mcgroups, ctx.ovnsb_idl);
+            lport_index_fill(&lports, ctx.ovnsb_idl);
+            mcgroup_index_fill(&mcgroups, ctx.ovnsb_idl);
 
             enum mf_field_id mff_ovn_geneve = ofctrl_run(br_int);
 
             pinctrl_run(&ctx, &lports, br_int);
 
-            struct hmap flow_table = HMAP_INITIALIZER(&flow_table);
-            lflow_run(&ctx, &lports, &mcgroups, &local_datapaths,
-                      &ct_zones, &flow_table);
+            lflow_run(&ctx, &lports, &mcgroups, &local_datapaths, &ct_zones);
             if (chassis_id) {
                 physical_run(&ctx, mff_ovn_geneve,
-                             br_int, chassis_id, &ct_zones, &flow_table,
+                             br_int, chassis_id, &ct_zones,
                              &local_datapaths);
             }
-            ofctrl_put(&flow_table);
-            hmap_destroy(&flow_table);
-            mcgroup_index_destroy(&mcgroups);
-            lport_index_destroy(&lports);
+            ofctrl_put();
         }
-
-        struct local_datapath *cur_node, *next_node;
-        HMAP_FOR_EACH_SAFE (cur_node, next_node, hmap_node, &local_datapaths) {
-            hmap_remove(&local_datapaths, &cur_node->hmap_node);
-            free(cur_node);
-        }
-        hmap_destroy(&local_datapaths);
 
         unixctl_server_run(unixctl);
 

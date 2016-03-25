@@ -15,6 +15,7 @@
 
 #include <config.h>
 #include "binding.h"
+#include "lflow.h"
 
 #include "lib/bitmap.h"
 #include "lib/hmap.h"
@@ -26,6 +27,16 @@
 #include "ovn-controller.h"
 
 VLOG_DEFINE_THIS_MODULE(binding);
+
+struct sset all_lports = SSET_INITIALIZER(&all_lports);
+
+unsigned int binding_seqno = 0;
+
+void
+reset_binding_seqno(void)
+{
+    binding_seqno = 0;
+}
 
 void
 binding_register_ovs_idl(struct ovsdb_idl *ovs_idl)
@@ -72,6 +83,10 @@ get_local_iface_ids(const struct ovsrec_bridge *br_int, struct shash *lports)
                 continue;
             }
             shash_add(lports, iface_id, iface_rec);
+            if (!sset_find(&all_lports, iface_id)) {
+                sset_add(&all_lports, iface_id);
+                reset_binding_seqno();
+            }
         }
     }
 }
@@ -121,9 +136,42 @@ update_ct_zones(struct sset *lports, struct simap *ct_zones,
     }
 }
 
+/* Contains "struct local_datpath" nodes whose hash values are the
+ * row uuids of datapaths with at least one local port binding. */
+struct hmap local_datapaths_by_uuid =
+    HMAP_INITIALIZER(&local_datapaths_by_uuid);
+
+static struct local_datapath *
+local_datapath_lookup_by_uuid(const struct uuid *uuid)
+{
+    struct hmap_node *ld_node = hmap_first_with_hash(&local_datapaths_by_uuid,
+                                                     uuid_hash(uuid));
+    if (ld_node) {
+        return CONTAINER_OF(ld_node, struct local_datapath, uuid_hmap_node);
+    }
+    return NULL;
+}
+
+static void
+remove_local_datapath(struct hmap *local_datapaths, const struct uuid *uuid)
+{
+    struct local_datapath *ld = local_datapath_lookup_by_uuid(uuid);
+    if (ld) {
+        if (ld->logical_port) {
+            sset_find_and_delete(&all_lports, ld->logical_port);
+            free(ld->logical_port);
+        }
+        hmap_remove(local_datapaths, &ld->hmap_node);
+        hmap_remove(&local_datapaths_by_uuid, &ld->uuid_hmap_node);
+        free(ld);
+        reset_flow_processing();
+    }
+}
+
 static void
 add_local_datapath(struct hmap *local_datapaths,
-        const struct sbrec_port_binding *binding_rec)
+        const struct sbrec_port_binding *binding_rec,
+        const struct uuid *uuid)
 {
     if (hmap_first_with_hash(local_datapaths,
                              binding_rec->datapath->tunnel_key)) {
@@ -131,8 +179,12 @@ add_local_datapath(struct hmap *local_datapaths,
     }
 
     struct local_datapath *ld = xzalloc(sizeof *ld);
+    ld->logical_port = xstrdup(binding_rec->logical_port);
     hmap_insert(local_datapaths, &ld->hmap_node,
                 binding_rec->datapath->tunnel_key);
+    hmap_insert(&local_datapaths_by_uuid, &ld->uuid_hmap_node,
+                uuid_hash(uuid));
+    reset_flow_processing();
 }
 
 static void
@@ -167,16 +219,39 @@ binding_run(struct controller_ctx *ctx, const struct ovsrec_bridge *br_int,
          * We'll remove our chassis from all port binding records below. */
     }
 
-    struct sset all_lports = SSET_INITIALIZER(&all_lports);
-    struct shash_node *node;
-    SHASH_FOR_EACH (node, &lports) {
-        sset_add(&all_lports, node->name);
-    }
-
     /* Run through each binding record to see if it is resident on this
      * chassis and update the binding accordingly.  This includes both
      * directly connected logical ports and children of those ports. */
-    SBREC_PORT_BINDING_FOR_EACH(binding_rec, ctx->ovnsb_idl) {
+    SBREC_PORT_BINDING_FOR_EACH_TRACKED(binding_rec, ctx->ovnsb_idl) {
+        unsigned int del_seqno = sbrec_port_binding_row_get_seqno(binding_rec,
+            OVSDB_IDL_CHANGE_DELETE);
+        unsigned int mod_seqno = sbrec_port_binding_row_get_seqno(binding_rec,
+            OVSDB_IDL_CHANGE_MODIFY);
+        unsigned int ins_seqno = sbrec_port_binding_row_get_seqno(binding_rec,
+            OVSDB_IDL_CHANGE_INSERT);
+
+        if (del_seqno <= binding_seqno && mod_seqno <= binding_seqno
+            && ins_seqno <= binding_seqno) {
+            continue;
+        }
+
+        /* if the row has a del_seqno > 0, then trying to process the row
+         * isn't going to work (as it has already been freed) */
+        if (del_seqno > 0) {
+            remove_local_datapath(local_datapaths, &binding_rec->header_.uuid);
+            if (del_seqno >= binding_seqno) {
+                binding_seqno = del_seqno;
+            }
+            continue;
+        }
+
+        if (mod_seqno >= binding_seqno) {
+            binding_seqno = mod_seqno;
+        }
+        if (ins_seqno >= binding_seqno) {
+            binding_seqno = ins_seqno;
+        }
+
         const struct ovsrec_interface *iface_rec
             = shash_find_and_delete(&lports, binding_rec->logical_port);
         if (iface_rec
@@ -186,7 +261,8 @@ binding_run(struct controller_ctx *ctx, const struct ovsrec_bridge *br_int,
                 /* Add child logical port to the set of all local ports. */
                 sset_add(&all_lports, binding_rec->logical_port);
             }
-            add_local_datapath(local_datapaths, binding_rec);
+            add_local_datapath(local_datapaths, binding_rec,
+                               &binding_rec->header_.uuid);
             if (iface_rec && ctx->ovs_idl_txn) {
                 update_qos(iface_rec, binding_rec);
             }
@@ -221,14 +297,9 @@ binding_run(struct controller_ctx *ctx, const struct ovsrec_bridge *br_int,
         }
     }
 
-    SHASH_FOR_EACH (node, &lports) {
-        VLOG_DBG("No port binding record for lport %s", node->name);
-    }
-
     update_ct_zones(&all_lports, ct_zones, ct_zone_bitmap);
 
     shash_destroy(&lports);
-    sset_destroy(&all_lports);
 }
 
 /* Returns true if the database is all cleaned up, false if more work is

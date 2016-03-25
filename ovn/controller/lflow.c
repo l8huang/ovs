@@ -26,6 +26,7 @@
 #include "ovn/lib/expr.h"
 #include "ovn/lib/ovn-sb-idl.h"
 #include "packets.h"
+#include "physical.h"
 #include "simap.h"
 
 VLOG_DEFINE_THIS_MODULE(lflow);
@@ -34,6 +35,16 @@ VLOG_DEFINE_THIS_MODULE(lflow);
 
 /* Contains "struct expr_symbol"s for fields supported by OVN lflows. */
 static struct shash symtab;
+
+void reset_flow_processing(void);
+
+bool restart_flow_processing = false;
+
+void
+reset_flow_processing(void)
+{
+    restart_flow_processing = true;
+}
 
 static void
 add_logical_register(struct shash *symtab, enum mf_field_id id)
@@ -193,17 +204,51 @@ is_switch(const struct sbrec_datapath_binding *ldp)
 
 }
 
+unsigned int lflow_logical_flow_seqno = 0;
+
 /* Adds the logical flows from the Logical_Flow table to 'flow_table'. */
 static void
 add_logical_flows(struct controller_ctx *ctx, const struct lport_index *lports,
                   const struct mcgroup_index *mcgroups,
                   const struct hmap *local_datapaths,
-                  const struct simap *ct_zones, struct hmap *flow_table)
+                  const struct simap *ct_zones)
 {
     uint32_t conj_id_ofs = 1;
 
     const struct sbrec_logical_flow *lflow;
-    SBREC_LOGICAL_FLOW_FOR_EACH (lflow, ctx->ovnsb_idl) {
+    SBREC_LOGICAL_FLOW_FOR_EACH_TRACKED (lflow, ctx->ovnsb_idl) {
+        unsigned int del_seqno = sbrec_logical_flow_row_get_seqno(lflow,
+            OVSDB_IDL_CHANGE_DELETE);
+        unsigned int ins_seqno = sbrec_logical_flow_row_get_seqno(lflow,
+            OVSDB_IDL_CHANGE_INSERT);
+        unsigned int mod_seqno = sbrec_logical_flow_row_get_seqno(lflow,
+            OVSDB_IDL_CHANGE_MODIFY);
+
+        if (del_seqno <= lflow_logical_flow_seqno
+            && mod_seqno <= lflow_logical_flow_seqno
+            && ins_seqno <= lflow_logical_flow_seqno) {
+            continue;
+        }
+
+        /* if the row has a del_seqno > 0, then trying to process the
+         * row isn't going to work (as it has already been freed).
+         * What we can do is to pass a pointer to the ovs_idl_row to
+         * ofctrl_remove_flows() to remove flows from this record */
+        if (del_seqno > 0) {
+            ofctrl_remove_flows(&lflow->header_.uuid);
+            if (del_seqno > lflow_logical_flow_seqno) {
+                lflow_logical_flow_seqno = del_seqno;
+            }
+            continue;
+        }
+
+        if (mod_seqno > lflow_logical_flow_seqno) {
+            lflow_logical_flow_seqno = mod_seqno;
+        }
+        if (ins_seqno > lflow_logical_flow_seqno) {
+            lflow_logical_flow_seqno = ins_seqno;
+        }
+
         /* Determine translation of logical table IDs to physical table IDs. */
         bool ingress = !strcmp(lflow->pipeline, "ingress");
 
@@ -321,8 +366,8 @@ add_logical_flows(struct controller_ctx *ctx, const struct lport_index *lports,
                 m->match.flow.conj_id += conj_id_ofs;
             }
             if (!m->n) {
-                ofctrl_add_flow(flow_table, ptable, lflow->priority,
-                                &m->match, &ofpacts);
+                ofctrl_add_flow(ptable, lflow->priority, &m->match, &ofpacts,
+                                &lflow->header_.uuid, mod_seqno);
             } else {
                 uint64_t conj_stubs[64 / 8];
                 struct ofpbuf conj;
@@ -337,12 +382,11 @@ add_logical_flows(struct controller_ctx *ctx, const struct lport_index *lports,
                     dst->clause = src->clause;
                     dst->n_clauses = src->n_clauses;
                 }
-                ofctrl_add_flow(flow_table, ptable, lflow->priority,
-                                &m->match, &conj);
+                ofctrl_add_flow(ptable, lflow->priority, &m->match, &conj,
+                                &lflow->header_.uuid, mod_seqno);
                 ofpbuf_uninit(&conj);
             }
         }
-
         /* Clean up. */
         expr_matches_destroy(&matches);
         ofpbuf_uninit(&ofpacts);
@@ -363,12 +407,14 @@ put_load(const uint8_t *data, size_t len,
     bitwise_one(&sf->mask, sf->field->n_bytes, ofs, n_bits);
 }
 
+unsigned int lflow_mac_binding_seqno = 0;
+
 /* Adds an OpenFlow flow to 'flow_table' for each MAC binding in the OVN
  * southbound database, using 'lports' to resolve logical port names to
  * numbers. */
 static void
 add_neighbor_flows(struct controller_ctx *ctx,
-                   const struct lport_index *lports, struct hmap *flow_table)
+                   const struct lport_index *lports)
 {
     struct ofpbuf ofpacts;
     struct match match;
@@ -376,7 +422,43 @@ add_neighbor_flows(struct controller_ctx *ctx,
     ofpbuf_init(&ofpacts, 0);
 
     const struct sbrec_mac_binding *b;
-    SBREC_MAC_BINDING_FOR_EACH (b, ctx->ovnsb_idl) {
+    SBREC_MAC_BINDING_FOR_EACH_TRACKED (b, ctx->ovnsb_idl) {
+        unsigned int del_seqno = sbrec_mac_binding_row_get_seqno(b,
+            OVSDB_IDL_CHANGE_DELETE);
+        unsigned int ins_seqno = sbrec_mac_binding_row_get_seqno(b,
+            OVSDB_IDL_CHANGE_MODIFY);
+        unsigned int mod_seqno = sbrec_mac_binding_row_get_seqno(b,
+            OVSDB_IDL_CHANGE_MODIFY);
+
+        /* TODO (regXboi) the following hunk of code is commented out
+         * because the above seqnos all return 0 at this point.
+         * Once that issue is fixed, this code can be uncommented
+         * and this comment removed.
+        if (del_seqno <= lflow_mac_binding_seqno
+            && mod_seqno <= lflow_mac_binding_seqno
+            && ins_seqno <= lflow_mac_binding_seqno) {
+            continue;
+        }
+        */
+
+        /* if the row has a del_seqno > 0, then trying to process the
+         * row isn't going to work (as it has already been freed).
+         * What we can do pass a pointer to the ovs_idl_row to 
+         * ofctrl_remove_flows() to remove the flow */
+        if (del_seqno > 0) {
+            ofctrl_remove_flows(&b->header_.uuid);
+            if (del_seqno > lflow_mac_binding_seqno) {
+                lflow_mac_binding_seqno = del_seqno;
+            }
+            continue;
+        }
+
+        if (mod_seqno > lflow_mac_binding_seqno) {
+            lflow_mac_binding_seqno = mod_seqno;
+        }
+        if (ins_seqno > lflow_mac_binding_seqno) {
+            lflow_mac_binding_seqno = ins_seqno;
+        }
         const struct sbrec_port_binding *pb
             = lport_lookup_by_name(lports, b->logical_port);
         if (!pb) {
@@ -404,8 +486,8 @@ add_neighbor_flows(struct controller_ctx *ctx,
         ofpbuf_clear(&ofpacts);
         put_load(mac.ea, sizeof mac.ea, MFF_ETH_DST, 0, 48, &ofpacts);
 
-        ofctrl_add_flow(flow_table, OFTABLE_MAC_BINDING, 100,
-                        &match, &ofpacts);
+        ofctrl_add_flow(OFTABLE_MAC_BINDING, 100, &match, &ofpacts,
+                        &b->header_.uuid, mod_seqno);
     }
     ofpbuf_uninit(&ofpacts);
 }
@@ -416,11 +498,19 @@ void
 lflow_run(struct controller_ctx *ctx, const struct lport_index *lports,
           const struct mcgroup_index *mcgroups,
           const struct hmap *local_datapaths,
-          const struct simap *ct_zones, struct hmap *flow_table)
+          const struct simap *ct_zones)
 {
-    add_logical_flows(ctx, lports, mcgroups, local_datapaths,
-                      ct_zones, flow_table);
-    add_neighbor_flows(ctx, lports, flow_table);
+    if (restart_flow_processing) {
+        lflow_logical_flow_seqno = 0;
+        lflow_mac_binding_seqno = 0;
+        ovn_flow_table_clear();
+        localvif_to_ofports_clear();
+        tunnels_clear();
+        restart_flow_processing = false;
+    }
+
+    add_logical_flows(ctx, lports, mcgroups, local_datapaths, ct_zones);
+    add_neighbor_flows(ctx, lports);
 }
 
 void

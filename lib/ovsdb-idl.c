@@ -1589,9 +1589,10 @@ ovsdb_idl_row_destroy(struct ovsdb_idl_row *row)
                 = row->table->change_seqno[OVSDB_IDL_CHANGE_DELETE]
                 = row->table->idl->change_seqno + 1;
         }
-        if (list_is_empty(&row->track_node)) {
-            list_push_back(&row->table->track_list, &row->track_node);
+        if (!list_is_empty(&row->track_node)) {
+            list_remove(&row->track_node);
         }
+        list_push_back(&row->table->track_list, &row->track_node);
     }
 }
 
