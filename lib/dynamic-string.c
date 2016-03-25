@@ -15,7 +15,7 @@
  */
 
 #include <config.h>
-#include "dynamic-string.h"
+#include "openvswitch/dynamic-string.h"
 #include "coverage.h"
 #include <inttypes.h>
 #include <stdlib.h>

@@ -30,7 +30,7 @@
  *        "should" be unique).
  */
 
-#include "dynamic-string.h"
+#include "openvswitch/dynamic-string.h"
 #include "shash.h"
 
 #ifdef  __cplusplus
