@@ -58,6 +58,13 @@ static unixctl_cb_func ovn_controller_exit;
 static unixctl_cb_func ct_zone_list;
 
 #define DEFAULT_BRIDGE_NAME "br-int"
+#define DEFAULT_PROBE_INTERVAL 5
+
+static void set_probe_timer_if_changed(const struct ovsrec_open_vswitch *cfg,
+                                       const struct ovsdb_idl *sb_idl);
+static bool extract_probe_timer(const struct ovsrec_open_vswitch *cfg,
+                                char *key_name,
+                                int *ret_value);
 
 static void parse_options(int argc, char *argv[]);
 OVS_NO_RETURN static void usage(void);
@@ -226,32 +233,6 @@ get_ovnsb_remote(struct ovsdb_idl *ovs_idl)
     }
 }
 
-/* Retrieves the OVN Southbound remote's json session probe interval from the
- * "external-ids:ovn-remote-probe-interval" key in 'ovs_idl' and returns it.
- *
- * This function must be called after get_ovnsb_remote(). */
-static bool
-get_ovnsb_remote_probe_interval(struct ovsdb_idl *ovs_idl, int *value)
-{
-    const struct ovsrec_open_vswitch *cfg = ovsrec_open_vswitch_first(ovs_idl);
-    if (!cfg) {
-        return false;
-    }
-
-    const char *probe_interval =
-        smap_get(&cfg->external_ids, "ovn-remote-probe-interval");
-    if (probe_interval) {
-        if (str_to_int(probe_interval, 10, value)) {
-            return true;
-        }
-
-        VLOG_WARN("Invalid value for OVN remote probe interval: %s",
-                  probe_interval);
-    }
-
-    return false;
-}
-
 int
 main(int argc, char *argv[])
 {
@@ -315,10 +296,12 @@ main(int argc, char *argv[])
         ovsdb_idl_create(ovnsb_remote, &sbrec_idl_class, true, true));
     ovsdb_idl_get_initial_snapshot(ovnsb_idl_loop.idl);
 
-    int probe_interval = 0;
-    if (get_ovnsb_remote_probe_interval(ovs_idl_loop.idl, &probe_interval)) {
-        ovsdb_idl_set_probe_interval(ovnsb_idl_loop.idl, probe_interval);
-    }
+    const struct ovsrec_open_vswitch *cfg =
+        ovsrec_open_vswitch_first(ovs_idl_loop.idl);
+    if (!cfg) {
+        return false;
+     }
+    set_probe_timer_if_changed(cfg,ovnsb_idl_loop.idl);
 
     /* Initialize connection tracking zones. */
     struct simap ct_zones = SIMAP_INITIALIZER(&ct_zones);
@@ -346,6 +329,7 @@ main(int argc, char *argv[])
             .ovnsb_idl = ovnsb_idl_loop.idl,
             .ovnsb_idl_txn = ovsdb_idl_loop_run(&ovnsb_idl_loop),
         };
+        set_probe_timer_if_changed(cfg,ovnsb_idl_loop.idl);
 
         /* Contains "struct local_datpath" nodes whose hash values are the
          * tunnel_key of datapaths with at least one local port binding. */
@@ -579,4 +563,56 @@ ct_zone_list(struct unixctl_conn *conn, int argc OVS_UNUSED,
 
     unixctl_command_reply(conn, ds_cstr(&ds));
     ds_destroy(&ds);
+}
+
+/* If SB probe timer is changed using ovs-vsctl command, this function
+ * will set that probe timer value for the session.
+ * cfg: Holding the external-id values read from southbound DB.
+ * sb_idl: pointer to the ovs_idl connection to OVN southbound.
+ */
+static void
+set_probe_timer_if_changed(const struct ovsrec_open_vswitch *cfg,
+                           const struct ovsdb_idl *sb_idl)
+{
+    static int probe_int_sb = DEFAULT_PROBE_INTERVAL * 1000;
+    int probe_int_sb_new = probe_int_sb;
+
+    extract_probe_timer(cfg, "ovn-remote-probe-interval", &probe_int_sb_new);
+    if (probe_int_sb_new != probe_int_sb) {
+        ovsdb_idl_set_probe_interval(sb_idl, probe_int_sb_new);
+        VLOG_INFO("OVN SB probe interval changed %d->%d ",
+                  probe_int_sb,
+                  probe_int_sb_new);
+        probe_int_sb = probe_int_sb_new;
+    }
+}
+
+/* Given key_name, the following function retrieves probe_timer value from the
+ * configuration passed, this configuration comes from the "external-ids"
+ * which were configured via ovs-vsctl command.
+ *
+ * cfg: Holding the external-id values read from NB database.
+ * keyname: Name to extract the value for.
+ * ret_value_ptr: Pointer to integer location where the value read
+ * should be copied.
+ * The function returns true if success, keeps the original
+ * value of ret_value_ptr intact in case of a failure.
+ */
+static bool
+extract_probe_timer(const struct ovsrec_open_vswitch *cfg,
+                    char *key_name,
+                    int *ret_value_ptr)
+{
+    const char *probe_interval= smap_get(&cfg->external_ids, key_name);
+    int ret_value_temp=0; /* Temporary location to hold the value, in case of
+                           * failure, str_to_int() sets the ret_value to 0,
+                           * which is a valid value of probe_timer. */
+    if ((!probe_interval) ||
+        (!str_to_int(probe_interval, 10, &ret_value_temp)))  {
+        VLOG_WARN("OVN OVSDB invalid remote probe interval:%s for %s",
+                 probe_interval, key_name);
+        return false;
+    }
+    *ret_value_ptr = ret_value_temp;
+    return true;
 }

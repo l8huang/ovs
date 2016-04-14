@@ -339,6 +339,9 @@ rconn_connect(struct rconn *rc, const char *target, const char *name)
     rconn_disconnect__(rc);
     rconn_set_target__(rc, target, name);
     rc->reliable = true;
+    if (!stream_or_pstream_needs_probes()) {
+        rc->probe_interval =0;
+    }
     reconnect(rc);
     ovs_mutex_unlock(&rc->mutex);
 }
