@@ -59,7 +59,7 @@ COVERAGE_DEFINE(pinctrl_drop_put_arp);
 void
 pinctrl_init(void)
 {
-    swconn = rconn_create(0, 0, DSCP_DEFAULT, 1 << OFP13_VERSION);
+    swconn = rconn_create(5, 0, DSCP_DEFAULT, 1 << OFP13_VERSION);
     conn_seq_no = 0;
     init_put_arps();
 }
