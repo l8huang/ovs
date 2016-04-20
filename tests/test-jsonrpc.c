@@ -270,7 +270,7 @@ do_request(struct ovs_cmdl_context *ctx)
         ovs_fatal(0, "not a valid JSON-RPC request: %s", string);
     }
 
-    error = stream_open_block(jsonrpc_stream_open(ctx->argv[1], &stream,
+    error = stream_open_block(jsonrpc_stream_open(ctx->argv[1], NULL, &stream,
                               DSCP_DEFAULT), &stream);
     if (error) {
         ovs_fatal(error, "could not open \"%s\"", ctx->argv[1]);
@@ -310,7 +310,7 @@ do_notify(struct ovs_cmdl_context *ctx)
         ovs_fatal(0, "not a JSON RPC-valid notification: %s", string);
     }
 
-    error = stream_open_block(jsonrpc_stream_open(ctx->argv[1], &stream,
+    error = stream_open_block(jsonrpc_stream_open(ctx->argv[1], NULL, &stream,
                               DSCP_DEFAULT), &stream);
     if (error) {
         ovs_fatal(error, "could not open \"%s\"", ctx->argv[1]);

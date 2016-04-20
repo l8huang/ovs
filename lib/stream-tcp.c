@@ -49,11 +49,12 @@ new_tcp_stream(const char *name, int fd, int connect_status,
 }
 
 static int
-tcp_open(const char *name, char *suffix, struct stream **streamp, uint8_t dscp)
+tcp_open(const char *name, char *suffix, const char *local,
+         struct stream **streamp, uint8_t dscp)
 {
     int fd, error;
 
-    error = inet_open_active(SOCK_STREAM, suffix, 0, NULL, &fd, dscp);
+    error = inet_open_active(SOCK_STREAM, suffix, 0, local, NULL, &fd, dscp);
     if (fd >= 0) {
         return new_tcp_stream(name, fd, error, streamp);
     } else {
@@ -79,8 +80,8 @@ const struct stream_class tcp_stream_class = {
 #include "dirs.h"
 
 static int
-windows_open(const char *name, char *suffix, struct stream **streamp,
-             uint8_t dscp)
+windows_open(const char *name, char *suffix, const char *local,
+             struct stream **streamp, uint8_t dscp)
 {
     int error, port;
     FILE *file;
@@ -112,7 +113,7 @@ windows_open(const char *name, char *suffix, struct stream **streamp,
 
     suffix_new = xasprintf("127.0.0.1:%d", port);
 
-    error = tcp_open(name, suffix_new, streamp, dscp);
+    error = tcp_open(name, suffix_new, local, streamp, dscp);
 
     free(suffix_new);
     free(path);

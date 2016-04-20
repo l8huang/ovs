@@ -2090,8 +2090,8 @@ do_idl(struct ovs_cmdl_context *ctx)
     if (ctx->argc > 2) {
         struct stream *stream;
 
-        error = stream_open_block(jsonrpc_stream_open(ctx->argv[1], &stream,
-                                  DSCP_DEFAULT), &stream);
+        error = stream_open_block(jsonrpc_stream_open(ctx->argv[1], NULL,
+                                  &stream, DSCP_DEFAULT), &stream);
         if (error) {
             ovs_fatal(error, "failed to connect to \"%s\"", ctx->argv[1]);
         }

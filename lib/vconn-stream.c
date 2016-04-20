@@ -78,7 +78,7 @@ vconn_stream_open(const char *name, uint32_t allowed_versions,
     struct stream *stream;
     int error;
 
-    error = stream_open_with_default_port(name, OFP_PORT, &stream, dscp);
+    error = stream_open_with_default_port(name, NULL, OFP_PORT, &stream, dscp);
     if (!error) {
         error = stream_connect(stream);
         if (!error || error == EAGAIN) {

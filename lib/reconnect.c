@@ -47,6 +47,7 @@ is_connected_state(enum state state)
 struct reconnect {
     /* Configuration. */
     char *name;
+    char *local;
     int min_backoff;
     int max_backoff;
     int probe_interval;
@@ -119,6 +120,7 @@ reconnect_destroy(struct reconnect *fsm)
 {
     if (fsm) {
         free(fsm->name);
+        free(fsm->local);
         free(fsm);
     }
 }
@@ -146,6 +148,13 @@ reconnect_get_name(const struct reconnect *fsm)
     return fsm->name;
 }
 
+/* Returns 'fsm''s local address used in active mode. */
+const char *
+reconnect_get_local(const struct reconnect *fsm)
+{
+    return fsm->local;
+}
+
 /* Sets 'fsm''s name to 'name'.  If 'name' is null, then "void" is used
  * instead.
  *
@@ -155,6 +164,17 @@ reconnect_set_name(struct reconnect *fsm, const char *name)
 {
     free(fsm->name);
     fsm->name = xstrdup(name ? name : "void");
+}
+
+/* Set 'fsm''s local address to 'local'. If 'local' is null, the local
+ * address will be selected by system.
+ *
+ * The local address set for 'fsm' is used in active mode for TCP stream. */
+void
+reconnect_set_local(struct reconnect *fsm, const char *local)
+{
+    free(fsm->local);
+    fsm->local = local ? xstrdup(local) : NULL;
 }
 
 /* Return the minimum number of milliseconds to back off between consecutive

@@ -70,6 +70,7 @@ static void parse_options(int argc, char *argv[]);
 OVS_NO_RETURN static void usage(void);
 
 static char *ovs_remote;
+static char *local_address;
 
 struct local_datapath *
 get_local_datapath(const struct hmap *local_datapaths, uint32_t tunnel_key)
@@ -294,6 +295,7 @@ main(int argc, char *argv[])
     char *ovnsb_remote = get_ovnsb_remote(ovs_idl_loop.idl);
     struct ovsdb_idl_loop ovnsb_idl_loop = OVSDB_IDL_LOOP_INITIALIZER(
         ovsdb_idl_create(ovnsb_remote, &sbrec_idl_class, true, true));
+    ovsdb_idl_set_local(ovnsb_idl_loop.idl, local_address);
     ovsdb_idl_get_initial_snapshot(ovnsb_idl_loop.idl);
 
     const struct ovsrec_open_vswitch *cfg =
@@ -319,6 +321,7 @@ main(int argc, char *argv[])
             free(ovnsb_remote);
             ovnsb_remote = new_ovnsb_remote;
             ovsdb_idl_set_remote(ovnsb_idl_loop.idl, ovnsb_remote, true);
+            ovsdb_idl_set_local(ovnsb_idl_loop.idl, local_address);
         } else {
             free(new_ovnsb_remote);
         }
@@ -446,6 +449,7 @@ main(int argc, char *argv[])
 
     free(ovnsb_remote);
     free(ovs_remote);
+    free(local_address);
     service_stop();
 
     exit(retval);
@@ -464,6 +468,7 @@ parse_options(int argc, char *argv[])
     static struct option long_options[] = {
         {"help", no_argument, NULL, 'h'},
         {"version", no_argument, NULL, 'V'},
+        {"local-address", required_argument, NULL, 'l'},
         VLOG_LONG_OPTIONS,
         DAEMON_LONG_OPTIONS,
         STREAM_SSL_LONG_OPTIONS,
@@ -488,6 +493,10 @@ parse_options(int argc, char *argv[])
         case 'V':
             ovs_print_version(OFP13_VERSION, OFP13_VERSION);
             exit(EXIT_SUCCESS);
+
+        case 'l':
+            local_address = xstrdup(optarg);
+            break;
 
         VLOG_OPTION_HANDLERS
         DAEMON_OPTION_HANDLERS
@@ -521,6 +530,14 @@ parse_options(int argc, char *argv[])
         VLOG_FATAL("exactly zero or one non-option argument required; "
                    "use --help for usage");
     }
+
+    if (local_address) {
+        struct sockaddr_storage ss;
+        if (!inet_parse_active(local_address, 0, &ss)) {
+            VLOG_FATAL("invalid local address %s; use --help for usage",
+                    local_address);
+        }
+    }
 }
 
 static void
@@ -535,7 +552,10 @@ usage(void)
     vlog_usage();
     printf("\nOther options:\n"
            "  -h, --help              display this help message\n"
-           "  -V, --version           display version information\n");
+           "  -V, --version           display version information\n"
+           "  -l, --local-address=IP:PORT\n"
+           "                          set the local address used for active "
+                                      "OVS-DATABASE connection\n");
     exit(EXIT_SUCCESS);
 }
 
