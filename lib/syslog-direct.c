@@ -58,7 +58,7 @@ syslog_direct_create(const char *method)
      * so that deadlocks would be avoided.  The problem is that these
      * functions that create socket might call VLOG() */
     if (!strncmp(method, "udp:", 4)) {
-        inet_open_active(SOCK_DGRAM, &method[4], 514, NULL, NULL, &this->fd, 0);
+        inet_open_active(SOCK_DGRAM, &method[4], 514, NULL, &this->fd, 0);
     } else if (!strncmp(method, "unix:", 5)) {
         this->fd = make_unix_socket(SOCK_DGRAM, true, NULL, &method[5]);
     } else {

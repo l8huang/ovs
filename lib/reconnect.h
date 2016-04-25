@@ -39,8 +39,6 @@ void reconnect_set_quiet(struct reconnect *, bool quiet);
 
 const char *reconnect_get_name(const struct reconnect *);
 void reconnect_set_name(struct reconnect *, const char *name);
-const char *reconnect_get_local(const struct reconnect *);
-void reconnect_set_local(struct reconnect *, const char *local);
 
 /* Defaults, all in msecs. */
 #define RECONNECT_DEFAULT_MIN_BACKOFF 1000

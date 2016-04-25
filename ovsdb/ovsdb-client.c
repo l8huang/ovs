@@ -315,7 +315,7 @@ open_jsonrpc(const char *server)
     struct stream *stream;
     int error;
 
-    error = stream_open_block(jsonrpc_stream_open(server, NULL, &stream,
+    error = stream_open_block(jsonrpc_stream_open(server, &stream,
                               DSCP_DEFAULT), &stream);
     if (error == EAFNOSUPPORT) {
         struct pstream *pstream;

@@ -57,8 +57,6 @@ struct stream_class {
      * 'dscp' is the DSCP value that the new connection should use in the IP
      * packets it sends.
      *
-     * 'local' is the local address used in active mode for TCP stream.
-     *
      * Returns 0 if successful, otherwise a positive errno value.  If
      * successful, stores a pointer to the new connection in '*streamp'.
      *
@@ -66,8 +64,8 @@ struct stream_class {
      * If the connection cannot be completed immediately, it should return
      * EAGAIN (not EINPROGRESS, as returned by the connect system call) and
      * continue the connection in the background. */
-    int (*open)(const char *name, char *suffix, const char *local,
-                struct stream **streamp, uint8_t dscp);
+    int (*open)(const char *name, char *suffix, struct stream **streamp,
+                uint8_t dscp);
 
     /* Closes 'stream' and frees associated memory. */
     void (*close)(struct stream *stream);

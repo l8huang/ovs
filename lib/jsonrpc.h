@@ -39,8 +39,7 @@ struct stream;
 #define OVSDB_OLD_PORT 6632
 #define OVSDB_PORT 6640
 
-int jsonrpc_stream_open(const char *name, const char *local,
-                        struct stream **, uint8_t dscp);
+int jsonrpc_stream_open(const char *name, struct stream **, uint8_t dscp);
 int jsonrpc_pstream_open(const char *name, struct pstream **, uint8_t dscp);
 
 struct jsonrpc *jsonrpc_open(struct stream *);
@@ -131,6 +130,5 @@ void jsonrpc_session_set_probe_interval(struct jsonrpc_session *,
                                         int probe_interval);
 void jsonrpc_session_set_dscp(struct jsonrpc_session *,
                               uint8_t dscp);
-void jsonrpc_session_set_local(struct jsonrpc_session *,
-                              const char *local);
+
 #endif /* jsonrpc.h */

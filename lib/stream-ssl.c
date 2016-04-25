@@ -308,8 +308,7 @@ ssl_stream_cast(struct stream *stream)
 }
 
 static int
-ssl_open(const char *name, char *suffix, const char *local,
-        struct stream **streamp, uint8_t dscp)
+ssl_open(const char *name, char *suffix, struct stream **streamp, uint8_t dscp)
 {
     int error, fd;
 
@@ -318,7 +317,7 @@ ssl_open(const char *name, char *suffix, const char *local,
         return error;
     }
 
-    error = inet_open_active(SOCK_STREAM, suffix, OFP_PORT, local, NULL, &fd,
+    error = inet_open_active(SOCK_STREAM, suffix, OFP_PORT, NULL, &fd,
                              dscp);
     if (fd >= 0) {
         int state = error ? STATE_TCP_CONNECTING : STATE_SSL_CONNECTING;

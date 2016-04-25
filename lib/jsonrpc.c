@@ -61,10 +61,9 @@ static void jsonrpc_error(struct jsonrpc *, int error);
 /* This is just the same as stream_open() except that it uses the default
  * JSONRPC port if none is specified. */
 int
-jsonrpc_stream_open(const char *name, const char *local,
-                    struct stream **streamp, uint8_t dscp)
+jsonrpc_stream_open(const char *name, struct stream **streamp, uint8_t dscp)
 {
-    return stream_open_with_default_port(name, local, OVSDB_PORT, streamp, dscp);
+    return stream_open_with_default_port(name, OVSDB_PORT, streamp, dscp);
 }
 
 /* This is just the same as pstream_open() except that it uses the default
@@ -865,12 +864,11 @@ static void
 jsonrpc_session_connect(struct jsonrpc_session *s)
 {
     const char *name = reconnect_get_name(s->reconnect);
-    const char *local = reconnect_get_local(s->reconnect);
     int error;
 
     jsonrpc_session_disconnect(s);
     if (!reconnect_is_passive(s->reconnect)) {
-        error = jsonrpc_stream_open(name, local, &s->stream, s->dscp);
+        error = jsonrpc_stream_open(name, &s->stream, s->dscp);
         if (!error) {
             reconnect_connecting(s->reconnect, time_msec());
         } else {
@@ -1167,12 +1165,4 @@ jsonrpc_session_set_dscp(struct jsonrpc_session *s, uint8_t dscp)
         s->dscp = dscp;
         jsonrpc_session_force_reconnect(s);
     }
-}
-
-/* Set the 'local' address used to connect to the remote host in active mode
- * for TCP stream. */
-void
-jsonrpc_session_set_local(struct jsonrpc_session *s, const char *local)
-{
-    reconnect_set_local(s->reconnect, local);
 }

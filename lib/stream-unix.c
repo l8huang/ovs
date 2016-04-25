@@ -40,12 +40,11 @@ VLOG_DEFINE_THIS_MODULE(stream_unix);
 /* Active UNIX socket. */
 
 static int
-unix_open(const char *name, char *suffix, const char *local,
-          struct stream **streamp, uint8_t dscp OVS_UNUSED)
+unix_open(const char *name, char *suffix, struct stream **streamp,
+          uint8_t dscp OVS_UNUSED)
 {
     char *connect_path;
     int fd;
-    (void)local;
 
     connect_path = abs_file_name(ovs_rundir(), suffix);
     fd = make_unix_socket(SOCK_STREAM, true, NULL, connect_path);

@@ -204,8 +204,7 @@ stream_verify_name(const char *name)
  * stores a pointer to the new connection in '*streamp', otherwise a null
  * pointer.  */
 int
-stream_open(const char *name, const char *local,
-            struct stream **streamp, uint8_t dscp)
+stream_open(const char *name, struct stream **streamp, uint8_t dscp)
 {
     const struct stream_class *class;
     struct stream *stream;
@@ -222,7 +221,7 @@ stream_open(const char *name, const char *local,
 
     /* Call class's "open" function. */
     suffix_copy = xstrdup(strchr(name, ':') + 1);
-    error = class->open(name, suffix_copy, local, &stream, dscp);
+    error = class->open(name, suffix_copy, &stream, dscp);
     free(suffix_copy);
     if (error) {
         goto error;
@@ -668,7 +667,6 @@ count_fields(const char *s_)
  * number is given. */
 int
 stream_open_with_default_port(const char *name_,
-                              const char *local,
                               uint16_t default_port,
                               struct stream **streamp,
                               uint8_t dscp)
@@ -691,7 +689,7 @@ stream_open_with_default_port(const char *name_,
     } else {
         name = xstrdup(name_);
     }
-    error = stream_open(name, local, streamp, dscp);
+    error = stream_open(name, streamp, dscp);
     free(name);
 
     return error;

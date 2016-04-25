@@ -442,17 +442,13 @@ inet_parse_active(const char *target_, uint16_t default_port,
  * into '*fdp'.  On failure, returns a positive errno value other than EAGAIN
  * and stores -1 into '*fdp'.
  *
- * If 'local' is non-null, then the socket will bind to the address
- * specified by it.
- *
- * If 'ssp' is non-null, then on success stores the target address into '*ssp'.
+ * If 'ss' is non-null, then on success stores the target address into '*ss'.
  *
  * 'dscp' becomes the DSCP bits in the IP headers for the new connection.  It
  * should be in the range [0, 63] and will automatically be shifted to the
  * appropriately place in the IP tos field. */
 int
 inet_open_active(int style, const char *target, uint16_t default_port,
-                 const char *local,
                  struct sockaddr_storage *ssp, int *fdp, uint8_t dscp)
 {
     struct sockaddr_storage ss;
@@ -484,23 +480,6 @@ inet_open_active(int style, const char *target, uint16_t default_port,
     if (error) {
         VLOG_ERR("%s: set_dscp: %s", target, sock_strerror(error));
         goto exit;
-    }
-
-    if (local) {
-        struct sockaddr_storage ss_local;
-        if (!inet_parse_active(local, 0, &ss_local)) {
-            error = EAFNOSUPPORT;
-            VLOG_ERR("invalid local address %s", local);
-            goto exit;
-        }
-        error = bind(fd, (struct sockaddr *) &ss_local,
-                     ss_length(&ss_local)) == 0
-                     ? 0
-                     : sock_errno();
-        if (error) {
-            VLOG_ERR("%s: bind to %s failed", target, local);
-            goto exit;
-        }
     }
 
     /* Connect. */

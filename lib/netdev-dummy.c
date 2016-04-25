@@ -400,7 +400,7 @@ dummy_packet_conn_set_config(struct dummy_packet_conn *conn,
         conn->u.rconn.reconnect = reconnect;
         conn->type = ACTIVE;
 
-        error = stream_open(stream, NULL, &active_stream, DSCP_DEFAULT);
+        error = stream_open(stream, &active_stream, DSCP_DEFAULT);
         conn->u.rconn.rstream = dummy_packet_stream_create(active_stream);
 
         switch (error) {
@@ -476,7 +476,6 @@ OVS_REQUIRES(dev->mutex)
                 error = stream_connect(rconn->rstream->stream);
             } else {
                 error = stream_open(reconnect_get_name(rconn->reconnect),
-                                    NULL,
                                     &rconn->rstream->stream, DSCP_DEFAULT);
             }
 

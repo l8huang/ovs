@@ -284,16 +284,6 @@ ovsdb_idl_set_remote(struct ovsdb_idl *idl, const char *remote,
     }
 }
 
-/* Set the 'local' address used to connect to the remote host in active mode
- * for TCP stream. */
-void
-ovsdb_idl_set_local(struct ovsdb_idl *idl, const char *local)
-{
-    if (idl && local) {
-        jsonrpc_session_set_local(idl->session, local);
-    }
-}
-
 /* Destroys 'idl' and all of the data structures that it manages. */
 void
 ovsdb_idl_destroy(struct ovsdb_idl *idl)
