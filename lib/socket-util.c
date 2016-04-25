@@ -392,7 +392,8 @@ exit:
     return false;
 }
 
-/* Parses 'target', which should be a string in the format "<host>[:<port>]".
+/* Parses 'target', which should be a string in the format
+ * "<host>[:<port>[:<local>[:<port>]]]".
  * <host>, which is required, may be an IPv4 address or an IPv6 address
  * enclosed in square brackets.  If 'default_port' is nonzero then <port> is
  * optional and defaults to 'default_port'.
@@ -401,7 +402,8 @@ exit:
  * On failure, logs an error, stores zeros into '*ss', and returns false. */
 bool
 inet_parse_active(const char *target_, uint16_t default_port,
-                  struct sockaddr_storage *ss)
+                  struct sockaddr_storage *foreign_ss,
+                  struct sockaddr_storage *local_ss)
 {
     char *target = xstrdup(target_);
     const char *port;
@@ -415,15 +417,32 @@ inet_parse_active(const char *target_, uint16_t default_port,
     if (!host) {
         VLOG_ERR("%s: host must be specified", target_);
         ok = false;
-    } else if (!port && !default_port) {
+    } else if ((!port || !port[0]) && !default_port) {
         VLOG_ERR("%s: port must be specified", target_);
         ok = false;
     } else {
-        ok = parse_sockaddr_components(ss, host, port, default_port, target_);
+        ok = parse_sockaddr_components(foreign_ss, host, port, default_port, target_);
     }
     if (!ok) {
-        memset(ss, 0, sizeof *ss);
+        memset(foreign_ss, 0, sizeof *foreign_ss);
+        goto exit;
     }
+
+    if (local_ss) {
+        const char *local;
+        const char *local_port;
+
+        local = parse_bracketed_token(&p);
+        local_port = parse_bracketed_token(&p);
+
+        local = (!local || !local[0]) ? "0.0.0.0" : local;
+        ok = parse_sockaddr_components(local_ss, local, local_port, 0, target_);
+        if (!ok) {
+            memset(local_ss, 0, sizeof *local_ss);
+        }
+    }
+
+exit:
     free(target);
     return ok;
 }
@@ -452,11 +471,12 @@ inet_open_active(int style, const char *target, uint16_t default_port,
                  struct sockaddr_storage *ssp, int *fdp, uint8_t dscp)
 {
     struct sockaddr_storage ss;
+    struct sockaddr_storage local_ss;
     int fd = -1;
     int error;
 
     /* Parse. */
-    if (!inet_parse_active(target, default_port, &ss)) {
+    if (!inet_parse_active(target, default_port, &ss, &local_ss)) {
         error = EAFNOSUPPORT;
         goto exit;
     }
@@ -479,6 +499,15 @@ inet_open_active(int style, const char *target, uint16_t default_port,
     error = set_dscp(fd, ss.ss_family, dscp);
     if (error) {
         VLOG_ERR("%s: set_dscp: %s", target, sock_strerror(error));
+        goto exit;
+    }
+
+    error = bind(fd, (struct sockaddr *) &local_ss,
+                 ss_length(&local_ss)) == 0
+                 ? 0
+                 : sock_errno();
+    if (error) {
+        VLOG_ERR("%s: bind failed", target);
         goto exit;
     }
 

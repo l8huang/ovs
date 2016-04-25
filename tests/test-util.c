@@ -23,11 +23,14 @@
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <netinet/in.h>
 #include "byte-order.h"
 #include "command-line.h"
 #include "ovstest.h"
 #include "random.h"
 #include "openvswitch/vlog.h"
+#include "socket-util.h"
+
 
 static void
 check_log_2_floor(uint32_t x, int n)
@@ -1128,6 +1131,124 @@ test_snprintf(struct ovs_cmdl_context *ctx OVS_UNUSED)
     ovs_assert(snprintf(NULL, 0, "abcde") == 5);
 }
 
+static void
+test_inet_parse_active(struct ovs_cmdl_context *ctx OVS_UNUSED)
+{
+    union {
+        struct sockaddr_storage ss;
+        struct sockaddr_in sin;
+        struct sockaddr_in6 sin6;
+    } foreign_sa;
+    union {
+        struct sockaddr_storage ss;
+        struct sockaddr_in sin;
+        struct sockaddr_in6 sin6;
+    } local_sa;
+    bool ok = false;
+
+    ok = inet_parse_active("127.0.0.1:100", 0, &foreign_sa.ss, &local_sa.ss);
+    ovs_assert(ok);
+    ovs_assert(foreign_sa.sin.sin_family == AF_INET);
+    ovs_assert(foreign_sa.sin.sin_addr.s_addr == htonl(INADDR_LOOPBACK));
+    ovs_assert(foreign_sa.sin.sin_port == htons(100));
+    ovs_assert(local_sa.sin.sin_family == AF_INET);
+    ovs_assert(local_sa.sin.sin_addr.s_addr == htonl(INADDR_ANY));
+    ovs_assert(local_sa.sin.sin_port == htons(0));
+
+    ok = inet_parse_active("127.0.0.1", 100, &foreign_sa.ss, &local_sa.ss);
+    ovs_assert(ok);
+    ovs_assert(foreign_sa.sin.sin_family == AF_INET);
+    ovs_assert(foreign_sa.sin.sin_addr.s_addr == htonl(INADDR_LOOPBACK));
+    ovs_assert(foreign_sa.sin.sin_port == htons(100));
+    ovs_assert(local_sa.sin.sin_family == AF_INET);
+    ovs_assert(local_sa.sin.sin_addr.s_addr == htonl(INADDR_ANY));
+    ovs_assert(local_sa.sin.sin_port == htons(0));
+
+    ok = inet_parse_active("127.0.0.1:", 100, &foreign_sa.ss, &local_sa.ss);
+    ovs_assert(ok);
+    ovs_assert(foreign_sa.sin.sin_family == AF_INET);
+    ovs_assert(foreign_sa.sin.sin_addr.s_addr == htonl(INADDR_LOOPBACK));
+    ovs_assert(foreign_sa.sin.sin_port == htons(100));
+    ovs_assert(local_sa.sin.sin_family == AF_INET);
+    ovs_assert(local_sa.sin.sin_addr.s_addr == htonl(INADDR_ANY));
+    ovs_assert(local_sa.sin.sin_port == htons(0));
+
+    ok = inet_parse_active("127.0.0.1", 0, &foreign_sa.ss, &local_sa.ss);
+    ovs_assert(!ok);
+
+    ok = inet_parse_active("127.0.0.1:", 0, &foreign_sa.ss, &local_sa.ss);
+    ovs_assert(!ok);
+
+    ok = inet_parse_active("127.0.0.1:100", 0, &foreign_sa.ss, NULL);
+    ovs_assert(ok);
+    ovs_assert(foreign_sa.sin.sin_family == AF_INET);
+    ovs_assert(foreign_sa.sin.sin_addr.s_addr == htonl(INADDR_LOOPBACK));
+    ovs_assert(foreign_sa.sin.sin_port == htons(100));
+
+    ok = inet_parse_active("127.0.0.1:100:127.0.0.1:200", 0, &foreign_sa.ss, &local_sa.ss);
+    ovs_assert(ok);
+    ovs_assert(foreign_sa.sin.sin_family == AF_INET);
+    ovs_assert(foreign_sa.sin.sin_addr.s_addr == htonl(INADDR_LOOPBACK));
+    ovs_assert(foreign_sa.sin.sin_port == htons(100));
+    ovs_assert(local_sa.sin.sin_family == AF_INET);
+    ovs_assert(local_sa.sin.sin_addr.s_addr == htonl(INADDR_LOOPBACK));
+    ovs_assert(local_sa.sin.sin_port == htons(200));
+
+    ok = inet_parse_active("127.0.0.1:100:127.0.0.1:200", 0, &foreign_sa.ss, NULL);
+    ovs_assert(ok);
+    ovs_assert(foreign_sa.sin.sin_family == AF_INET);
+    ovs_assert(foreign_sa.sin.sin_addr.s_addr == htonl(INADDR_LOOPBACK));
+    ovs_assert(foreign_sa.sin.sin_port == htons(100));
+
+    ok = inet_parse_active("127.0.0.1:6640:127.0.0.1:", 0, &foreign_sa.ss, &local_sa.ss);
+    ovs_assert(ok);
+    ovs_assert(local_sa.sin.sin_addr.s_addr == htonl(INADDR_LOOPBACK));
+    ovs_assert(local_sa.sin.sin_port == htons(0));
+
+    ok = inet_parse_active("127.0.0.1:6640:127.0.0.1", 0, &foreign_sa.ss, &local_sa.ss);
+    ovs_assert(ok);
+    ovs_assert(local_sa.sin.sin_addr.s_addr == htonl(INADDR_LOOPBACK));
+    ovs_assert(local_sa.sin.sin_port == htons(0));
+
+    ok = inet_parse_active("127.0.0.1:6640::200", 0, &foreign_sa.ss, &local_sa.ss);
+    ovs_assert(ok);
+    ovs_assert(local_sa.sin.sin_family == AF_INET);
+    ovs_assert(local_sa.sin.sin_addr.s_addr == htonl(INADDR_ANY));
+    ovs_assert(local_sa.sin.sin_port == htons(200));
+
+    ok = inet_parse_active("127.0.0.1:6640::", 0, &foreign_sa.ss, &local_sa.ss);
+    ovs_assert(ok);
+    ovs_assert(local_sa.sin.sin_family == AF_INET);
+    ovs_assert(local_sa.sin.sin_addr.s_addr == htonl(INADDR_ANY));
+    ovs_assert(local_sa.sin.sin_port == htons(0));
+
+    ok = inet_parse_active("127.0.0.1:::", 100, &foreign_sa.ss, &local_sa.ss);
+    ovs_assert(ok);
+    ovs_assert(foreign_sa.sin.sin_family == AF_INET);
+    ovs_assert(foreign_sa.sin.sin_addr.s_addr == htonl(INADDR_LOOPBACK));
+    ovs_assert(foreign_sa.sin.sin_port == htons(100));
+    ovs_assert(local_sa.sin.sin_family == AF_INET);
+    ovs_assert(local_sa.sin.sin_addr.s_addr == htonl(INADDR_ANY));
+    ovs_assert(local_sa.sin.sin_port == htons(0));
+
+    ok = inet_parse_active("127.0.0.1::", 100, &foreign_sa.ss, &local_sa.ss);
+    ovs_assert(ok);
+    ovs_assert(foreign_sa.sin.sin_family == AF_INET);
+    ovs_assert(foreign_sa.sin.sin_addr.s_addr == htonl(INADDR_LOOPBACK));
+    ovs_assert(foreign_sa.sin.sin_port == htons(100));
+    ovs_assert(local_sa.sin.sin_family == AF_INET);
+    ovs_assert(local_sa.sin.sin_addr.s_addr == htonl(INADDR_ANY));
+    ovs_assert(local_sa.sin.sin_port == htons(0));
+
+    ok = inet_parse_active("127.0.0.1:999999:127.0.0.1:200", 0, &foreign_sa.ss, NULL);
+    ovs_assert(!ok);
+
+    ok = inet_parse_active("127.0.0.0.0.1:100:127.0.0.1:200", 0, &foreign_sa.ss, NULL);
+    ovs_assert(!ok);
+}
+
+
+
 #ifndef _WIN32
 static void
 test_file_name(struct ovs_cmdl_context *ctx)
@@ -1164,6 +1285,7 @@ static const struct ovs_cmdl_command commands[] = {
     {"assert", NULL, 0, 0, test_assert},
     {"ovs_scan", NULL, 0, 0, test_ovs_scan},
     {"snprintf", NULL, 0, 0, test_snprintf},
+    {"inet_parse_active", NULL, 0, 0, test_inet_parse_active},
 #ifndef _WIN32
     {"file_name", NULL, 1, INT_MAX, test_file_name},
 #endif

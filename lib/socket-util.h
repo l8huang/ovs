@@ -44,7 +44,8 @@ void drain_fd(int fd, size_t n_packets);
 ovs_be32 guess_netmask(ovs_be32 ip);
 
 bool inet_parse_active(const char *target, uint16_t default_port,
-                       struct sockaddr_storage *ssp);
+                       struct sockaddr_storage *foreign_ssp,
+                       struct sockaddr_storage *local_ssp);
 int inet_open_active(int style, const char *target, uint16_t default_port,
                      struct sockaddr_storage *ssp, int *fdp, uint8_t dscp);
 

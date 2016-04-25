@@ -451,7 +451,7 @@ sflow_choose_agent_address(const char *agent_device,
         } sa;
         char name[IFNAMSIZ];
 
-        if (inet_parse_active(target, SFL_DEFAULT_COLLECTOR_PORT, &sa.ss)
+        if (inet_parse_active(target, SFL_DEFAULT_COLLECTOR_PORT, &sa.ss, NULL)
             && sa.ss.ss_family == AF_INET) {
             struct in6_addr addr6, src, gw;
 

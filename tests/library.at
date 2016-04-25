@@ -136,6 +136,11 @@ m4_foreach(
    AT_CHECK([ovstest test-util testname], [0], [], [])
    AT_CLEANUP])
 
+AT_SETUP([inet_parse_active[()] function])
+AT_KEYWORDS([inet_parse_active])
+AT_CHECK([ovstest test-util inet_parse_active], [0], [], [stderr])
+AT_CLEANUP
+
 AT_SETUP([test unix socket, short pathname - C])
 AT_SKIP_IF([test "$IS_WIN32" = "yes"])
 AT_CHECK([ovstest test-unix-socket x])
